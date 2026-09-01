@@ -1,0 +1,9 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+# Generated outputs — the image only needs the raw season CSVs
+matches_clean.csv
+match_features.csv
+backtest_25-26.csv

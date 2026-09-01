@@ -1,0 +1,25 @@
+# Render Blueprint: API web service + managed Postgres.
+# Apply via Render dashboard -> Blueprints -> New Blueprint Instance,
+# pointing at this repo. See DEPLOY.md for the one-time seeding step.
+
+services:
+  - type: web
+    name: football-predictor-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      # Render injects the managed DB's connection string; models.get_engine
+      # normalizes the postgres:// scheme to postgresql+psycopg:// itself.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-predictor-db
+          property: connectionString
+
+databases:
+  - name: football-predictor-db
+    plan: free
+    databaseName: football
+    user: football

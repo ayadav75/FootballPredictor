@@ -20,7 +20,14 @@ DEFAULT_DATABASE_URL = "postgresql+psycopg://football:football@localhost:5432/fo
 
 
 def get_engine(url: str | None = None) -> Engine:
-    return create_engine(url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL))
+    url = url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    # Managed providers (e.g. Render) hand out postgres:// or postgresql://
+    # URLs; SQLAlchemy needs the explicit psycopg3 driver in the scheme.
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+    return create_engine(url)
 
 
 class Base(DeclarativeBase):

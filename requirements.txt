@@ -1,0 +1,9 @@
+# Runtime dependencies (pinned to the versions developed against).
+# Dev/test tools live in requirements-dev.txt.
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.18.1
+SQLAlchemy==2.0.52
+psycopg[binary]==3.3.5
+fastapi==0.141.1
+uvicorn[standard]==0.52.4

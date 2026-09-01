@@ -16,5 +16,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot initializer: creates the schema, loads match data, and fits+saves
+  # a model if the DB has none — so `docker compose up` works from an empty
+  # clone with zero manual steps. Idempotent; exits when done.
+  seed:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    command: python seed.py
+    environment:
+      DATABASE_URL: postgresql+psycopg://football:football@db:5432/football
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://football:football@db:5432/football
+    depends_on:
+      db:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+
 volumes:
   pgdata:

@@ -81,6 +81,10 @@ class DixonColes:
     defense: dict[str, float] = field(default_factory=dict, init=False)
     home_advantage: float = field(default=np.nan, init=False)
     rho: float = field(default=np.nan, init=False)
+    # Set by load(): which stored run this model came from, and which teams
+    # carry assigned (not fitted) ratings. None/empty for a freshly fit model.
+    model_run_id: int | None = field(default=None, init=False)
+    fallback_teams: set[str] = field(default_factory=set, init=False)
 
     def fit(self, matches: pd.DataFrame) -> "DixonColes":
         """Fit on a DataFrame with columns date, home_team, away_team,
@@ -258,6 +262,8 @@ class DixonColes:
             model.attack = {r.team: r.attack for r in run.ratings}
             model.defense = {r.team: r.defense for r in run.ratings}
             model.teams = sorted(model.attack)
+            model.model_run_id = run.id
+            model.fallback_teams = {r.team for r in run.ratings if r.is_fallback}
             return model
 
     def ratings_table(self) -> pd.DataFrame:
