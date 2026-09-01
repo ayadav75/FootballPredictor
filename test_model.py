@@ -118,6 +118,40 @@ def test_fit_recovers_ordering_and_normalization():
     assert m.home_advantage > 1.0
 
 
+def test_save_load_round_trip():
+    """A model saved to the DB and loaded back gives identical predictions.
+    Uses in-memory SQLite so the test needs no running Postgres."""
+    from sqlalchemy import create_engine
+
+    from models import Base
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    original = DixonColes(decay_rate=0.002).fit(_synthetic_matches())
+    run_id = original.save(
+        engine,
+        train_start=pd.Timestamp("2023-08-01").date(),
+        train_end=pd.Timestamp("2024-02-01").date(),
+        n_training_matches=180,
+        fallback_teams={"F"},
+    )
+    loaded = DixonColes.load(engine, run_id)
+
+    assert loaded.attack == pytest.approx(original.attack)
+    assert loaded.defense == pytest.approx(original.defense)
+    assert loaded.home_advantage == pytest.approx(original.home_advantage)
+    assert loaded.rho == pytest.approx(original.rho)
+    assert loaded.decay_rate == original.decay_rate
+    p1 = original.predict_match("A", "E")
+    p2 = loaded.predict_match("A", "E")
+    pd.testing.assert_frame_equal(p1.score_matrix, p2.score_matrix)
+
+    # load() with no id returns the latest run
+    latest = DixonColes.load(engine)
+    assert latest.attack == pytest.approx(original.attack)
+
+
 def test_unknown_team_raises():
     model = make_model(attack={"A": 1.0}, defense={"A": 1.3})
     with pytest.raises(KeyError):

@@ -190,6 +190,76 @@ class DixonColes:
         grid *= np.maximum(tau(hg, ag, lam, mu, self.rho), 0.0)
         return grid
 
+    def save(self, engine, train_start=None, train_end=None,
+             n_training_matches: int = 0,
+             fallback_teams: set[str] | None = None) -> int:
+        """Persist this fitted model to model_runs/team_ratings.
+
+        Returns the new model_run id. `fallback_teams` marks ratings that
+        were assigned (promoted sides) rather than fitted, so a reloaded
+        model is a faithful copy. Imported lazily so the statistical model
+        stays usable without the DB stack.
+        """
+        from sqlalchemy.orm import Session
+
+        from models import ModelRun, TeamRating
+
+        if not self.attack:
+            raise ValueError("Cannot save an unfitted model")
+        fallback_teams = fallback_teams or set()
+        run = ModelRun(
+            decay_rate=self.decay_rate,
+            home_advantage=self.home_advantage,
+            rho=self.rho,
+            train_start=train_start,
+            train_end=train_end,
+            n_training_matches=n_training_matches,
+            ratings=[
+                TeamRating(
+                    team=team,
+                    attack=self.attack[team],
+                    defense=self.defense[team],
+                    is_fallback=team in fallback_teams,
+                )
+                for team in self.teams
+            ],
+        )
+        with Session(engine) as session:
+            session.add(run)
+            session.commit()
+            return run.id
+
+    @classmethod
+    def load(cls, engine, model_run_id: int | None = None) -> "DixonColes":
+        """Reconstruct a fitted model from a stored model_run.
+
+        With no id, loads the most recent run. This is how the API will get
+        a ready model without refitting on startup.
+        """
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        from models import ModelRun
+
+        with Session(engine) as session:
+            if model_run_id is None:
+                run = session.scalars(
+                    select(ModelRun).order_by(ModelRun.created_at.desc(), ModelRun.id.desc())
+                ).first()
+                if run is None:
+                    raise LookupError("No model_runs stored yet")
+            else:
+                run = session.get(ModelRun, model_run_id)
+                if run is None:
+                    raise LookupError(f"No model_run with id {model_run_id}")
+            model = cls(decay_rate=run.decay_rate)
+            model.home_advantage = run.home_advantage
+            model.rho = run.rho
+            model.attack = {r.team: r.attack for r in run.ratings}
+            model.defense = {r.team: r.defense for r in run.ratings}
+            model.teams = sorted(model.attack)
+            return model
+
     def ratings_table(self) -> pd.DataFrame:
         return (
             pd.DataFrame({
