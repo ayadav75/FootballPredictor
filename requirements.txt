@@ -5,5 +5,6 @@ pandas==3.0.5
 scipy==1.18.1
 SQLAlchemy==2.0.52
 psycopg[binary]==3.3.5
+requests==2.34.2
 fastapi==0.141.1
 uvicorn[standard]==0.52.4

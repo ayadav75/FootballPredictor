@@ -61,6 +61,61 @@ def load_matches(data_dir: Path | str, seasons: list[str] = SEASONS) -> pd.DataF
     return df
 
 
+def normalize_team_name(name: str) -> str:
+    """Lowercase alphanumeric skeleton of a team name — the shared
+    normalization for both duplicate detection and cross-source mapping."""
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+# Normalized external-source spellings (football-data.org, Kalshi, ...) that
+# don't reduce to a canonical football-data.co.uk name by normalization alone.
+TEAM_ALIASES = {
+    "manchesterunited": "Man United",
+    "manutd": "Man United",
+    "manchestercity": "Man City",
+    "nottinghamforest": "Nott'm Forest",
+    "wolverhamptonwanderers": "Wolves",
+    "brightonhovealbion": "Brighton",
+    "westhamunited": "West Ham",
+    "newcastleunited": "Newcastle",
+    "tottenhamhotspur": "Tottenham",
+    "spurs": "Tottenham",
+    "ipswichtown": "Ipswich",
+    "leedsunited": "Leeds",
+    "lutontown": "Luton",
+    "leicestercity": "Leicester",
+    "sheffieldutd": "Sheffield United",
+}
+
+
+def canonical_team_name(name: str, known_teams: list[str]) -> str | None:
+    """Map an external source's team name to our canonical name.
+
+    Handles suffix noise ("Arsenal FC", "Sunderland AFC", "AFC Bournemouth"),
+    known alias spellings, and unique-prefix matches. Returns None when there
+    is no confident match (e.g. a club that has never been in our data) —
+    callers must treat that as "unknown team", never guess.
+    """
+    canon_by_norm = {normalize_team_name(t): t for t in known_teams}
+    n = normalize_team_name(name)
+    for affix in ("afc", "fc"):
+        if n.endswith(affix) and len(n) > len(affix):
+            n = n[: -len(affix)]
+    if n.startswith("afc") and len(n) > 3:
+        n = n[3:]
+
+    if n in canon_by_norm:
+        return canon_by_norm[n]
+    if n in TEAM_ALIASES:
+        alias = TEAM_ALIASES[n]
+        return alias if alias in known_teams else None
+    prefix_hits = [c for k, c in canon_by_norm.items()
+                   if k.startswith(n) or n.startswith(k)]
+    if len(prefix_hits) == 1:
+        return prefix_hits[0]
+    return None
+
+
 def find_suspect_team_names(df: pd.DataFrame, threshold: float = 0.8) -> list[tuple[str, str]]:
     """Flag pairs of distinct team names that look like the same club.
 
@@ -69,9 +124,7 @@ def find_suspect_team_names(df: pd.DataFrame, threshold: float = 0.8) -> list[tu
     team into two model entities, so we check anyway.
     """
     names = sorted(set(df["home_team"]) | set(df["away_team"]))
-
-    def norm(name: str) -> str:
-        return "".join(ch for ch in name.lower() if ch.isalnum())
+    norm = normalize_team_name
 
     suspects = []
     for a, b in itertools.combinations(names, 2):

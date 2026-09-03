@@ -14,13 +14,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from sqlalchemy import text
 
+from api.fixtures import FixturesUnavailable, fetch_upcoming_fixtures
+from api.kalshi import KalshiUnavailable, get_market_index, market_for_fixture
 from api.schemas import (
+    FixtureEdge,
+    FixtureKalshi,
+    FixtureModelProbs,
     HealthResponse,
     PredictionResponse,
     ReloadResponse,
     ScorelineResponse,
     TeamsResponse,
+    UpcomingFixture,
+    UpcomingFixturesResponse,
 )
+from data import canonical_team_name
 from model import DixonColes
 from models import get_engine
 
@@ -152,6 +160,95 @@ def teams(request: Request):
         model_run_id=model.model_run_id,
         teams=model.teams,
         fallback_teams=sorted(model.fallback_teams),
+    )
+
+
+@app.get("/fixtures/upcoming", response_model=UpcomingFixturesResponse)
+def upcoming_fixtures(request: Request, days: int = 7):
+    """Scheduled PL fixtures with model predictions and Kalshi market prices.
+
+    Data honesty notes: a fixture involving a team the model has never seen
+    gets model=null with a note; a fixture Kalshi lists no contract for gets
+    kalshi=null with a note. Kalshi prices are cached up to 60s (fetched_at
+    says exactly when they were pulled).
+    """
+    from datetime import datetime, timezone
+
+    started = time.perf_counter()
+    model = get_model(request)
+    if not 1 <= days <= 14:
+        raise HTTPException(status_code=400, detail="days must be 1-14")
+    try:
+        fixtures = fetch_upcoming_fixtures(days)
+    except FixturesUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    kalshi_index, kalshi_fetched_at, kalshi_error = {}, None, None
+    try:
+        kalshi_index, kalshi_fetched_at = get_market_index(model.teams)
+    except KalshiUnavailable as exc:
+        kalshi_error = str(exc)
+        logger.warning("kalshi fetch failed, serving fixtures without markets: %s", exc)
+
+    out, matched = [], 0
+    for f in fixtures:
+        home = canonical_team_name(f.home_name, model.teams)
+        away = canonical_team_name(f.away_name, model.teams)
+
+        model_probs = model_note = None
+        if home and away:
+            pred = model.predict_match(home, away)
+            fallback = sorted({home, away} & model.fallback_teams)
+            model_probs = FixtureModelProbs(
+                home_win=pred.home_win, draw=pred.draw, away_win=pred.away_win,
+                fallback_rating=bool(fallback), fallback_teams=fallback,
+            )
+        else:
+            unknown = [n for n, c in ((f.home_name, home), (f.away_name, away)) if c is None]
+            model_note = (f"No prediction: {', '.join(unknown)} not in the "
+                          "model's team list (never appeared in its data)")
+
+        kalshi = edge = None
+        kalshi_note = kalshi_error
+        if kalshi_error is None and not (home and away):
+            # A market may well exist, but matching is done on canonical
+            # names — say we didn't try, not that Kalshi has nothing.
+            kalshi_note = "Kalshi matching skipped (team not in model's list)"
+        elif kalshi_error is None:
+            market = market_for_fixture(kalshi_index, home, away,
+                                        f.kickoff_utc, kalshi_fetched_at)
+            if market:
+                matched += 1
+                kalshi = FixtureKalshi(**market.__dict__)
+                if model_probs:
+                    edge = FixtureEdge(
+                        home=model_probs.home_win - kalshi.home,
+                        draw=model_probs.draw - kalshi.draw,
+                        away=model_probs.away_win - kalshi.away,
+                    )
+            else:
+                kalshi_note = "No Kalshi market listed for this fixture"
+
+        out.append(UpcomingFixture(
+            kickoff_utc=f.kickoff_utc,
+            matchday=f.matchday,
+            home_team=home or f.home_name,
+            away_team=away or f.away_name,
+            model=model_probs, model_note=model_note,
+            kalshi=kalshi, kalshi_note=kalshi_note,
+            edge=edge,
+        ))
+
+    logger.info(
+        "/fixtures/upcoming days=%d fixtures=%d kalshi_matched=%d model_run_id=%s latency_ms=%.1f",
+        days, len(out), matched, model.model_run_id,
+        (time.perf_counter() - started) * 1000,
+    )
+    return UpcomingFixturesResponse(
+        model_run_id=model.model_run_id,
+        days=days,
+        generated_at=datetime.now(timezone.utc),
+        fixtures=out,
     )
 
 

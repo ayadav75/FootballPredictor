@@ -3,6 +3,8 @@
 Field descriptions feed the auto-generated OpenAPI docs at /docs.
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -47,6 +49,61 @@ class TeamsResponse(BaseModel):
     fallback_teams: list[str] = Field(
         description="Subset of teams whose ratings are assigned, not fitted"
     )
+
+
+class FixtureModelProbs(BaseModel):
+    home_win: float
+    draw: float
+    away_win: float
+    fallback_rating: bool
+    fallback_teams: list[str]
+
+
+class FixtureKalshi(BaseModel):
+    event_ticker: str = Field(description="Kalshi event, e.g. KXEPLGAME-26SEP04IPSLFC")
+    home: float = Field(description="Implied P(home win): mid of yes bid/ask")
+    draw: float
+    away: float
+    mid_sum: float = Field(
+        description="Sum of the three raw mid-prices — how close the book is "
+        "to a fair 1.0 (no de-vig is applied)"
+    )
+    fetched_at: "datetime" = Field(
+        description="When these prices were pulled from Kalshi — prices are "
+        "live and this response may be up to 60s cached"
+    )
+
+
+class FixtureEdge(BaseModel):
+    home: float = Field(description="Model P(home) minus Kalshi P(home)")
+    draw: float
+    away: float
+
+
+class UpcomingFixture(BaseModel):
+    kickoff_utc: "datetime"
+    matchday: int | None
+    home_team: str = Field(description="Canonical name (or source name if unmapped)")
+    away_team: str
+    model: FixtureModelProbs | None = Field(
+        description="Null when a team is unknown to the model (see model_note)"
+    )
+    model_note: str | None
+    kalshi: FixtureKalshi | None = Field(
+        description="Null when Kalshi lists no market for this fixture — an "
+        "expected case (see kalshi_note), not an error"
+    )
+    kalshi_note: str | None
+    edge: FixtureEdge | None = Field(
+        description="Model minus Kalshi, present only when both sides exist"
+    )
+
+
+class UpcomingFixturesResponse(BaseModel):
+    model_run_id: int
+    days: int
+    generated_at: "datetime"
+    fixtures: list[UpcomingFixture]
 
 
 class HealthResponse(BaseModel):

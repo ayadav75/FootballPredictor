@@ -48,6 +48,14 @@ The free tier has no shell access; on a paid instance you can instead open
 the service's **Shell** tab and run `python seed.py` — the image contains
 the season CSVs precisely so this works.
 
+## Environment variables
+
+`FOOTBALL_DATA_API_KEY` (for `/fixtures/upcoming`) is declared with
+`sync: false` in `render.yaml`, so Render prompts for the value in the
+dashboard when applying the Blueprint — paste the token from your
+football-data.org account (locally it lives in the gitignored `.env`).
+Kalshi market data needs no key.
+
 ## Free-tier caveats worth knowing
 
 - The web service **spins down after ~15 minutes idle**; the first request

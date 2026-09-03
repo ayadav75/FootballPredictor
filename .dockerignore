@@ -7,3 +7,4 @@ __pycache__
 matches_clean.csv
 match_features.csv
 backtest_25-26.csv
+.env

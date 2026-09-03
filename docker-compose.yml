@@ -38,6 +38,8 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+psycopg://football:football@db:5432/football
+      # Interpolated from .env (gitignored) — needed for /fixtures/upcoming
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

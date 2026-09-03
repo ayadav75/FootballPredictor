@@ -17,6 +17,11 @@ services:
         fromDatabase:
           name: football-predictor-db
           property: connectionString
+      # football-data.org token for /fixtures/upcoming; sync: false makes
+      # Render prompt for the value in the dashboard instead of storing it
+      # in the repo.
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
 
 databases:
   - name: football-predictor-db
