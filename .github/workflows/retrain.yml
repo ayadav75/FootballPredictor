@@ -1,0 +1,38 @@
+name: Weekly retrain
+
+on:
+  schedule:
+    # Monday 06:00 UTC — after the weekend's matches have finished and
+    # football-data.org has final scores.
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+# Never let two retrains race against the same production DB.
+concurrency:
+  group: retrain-production
+  cancel-in-progress: false
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # retrain.py exits nonzero on any failure (fetch, fit, save, reload,
+      # or health mismatch), which fails this workflow loudly. It writes a
+      # run summary (new matches, model_run id, health confirmation) to the
+      # GitHub Actions step summary.
+      - name: Retrain and reload live API
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+          RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+        run: python retrain.py
